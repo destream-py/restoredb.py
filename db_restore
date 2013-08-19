@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+"""\
+db_restore is a script to stream any multi-compressed archive to an SQL
+command-line tool a a specific dump program to restore.
+"""
+
+import re
+import sys
+import argparse
+import errno
+from subprocess import Popen, PIPE
+import StreamDecompressor
+from StreamDecompressor.tar import Untar
+import magic
+
+RE_PGDUMP_FORMAT_TAR_FILES = re.compile(r"^((toc|\d+).dat|restore.sql)$")
+PG_RESTORE = 'pg_restore'
+
+
+def external_pipe(command, options, stdin):
+    sys.stderr.write('-- '+command+' '+options+"\n")
+    p = Popen(command+' '+options, stdin=PIPE, shell=True)
+    p.stdin.writelines(stdin)
+    p.stdin.close()
+    returncode = p.wait()
+    if returncode != 0:
+        raise IOError(errno.EPIPE, "pipe broken: " +command+' '+options)
+
+
+def restore(command, dbname, dump, options):
+    stream = StreamDecompressor.open(dump)
+    sys.stderr.write("-- Compressions detected: %s\n"
+        % ", ".join(stream.compressions))
+    head = stream.peek(1024)
+    mime = magic.from_buffer(head, mime=True)
+    if isinstance(stream, Untar) and not stream.single:
+        sys.stderr.write("-- Tarball detected\n")
+        sys.stderr.write("-- Files are: "+' '.join(stream.tarfile.getnames())+"\n")
+        if all(map(lambda member: RE_PGDUMP_FORMAT_TAR_FILES.search(member), stream.tarfile.getnames())):
+            sys.stderr.write("-- PostgreSQL dump tarball detected\n")
+            stream.source.seek(0)
+            external_pipe(PG_RESTORE, ' '.join(filter(None,
+                    ['-d',dbname,'--format=t',options.get(PG_RESTORE)])),
+                stream.source)
+        else:
+            raise IOError(errno.EPIPE, "can not handle this tarball")
+    elif mime.startswith('text/'):
+        sys.stderr.write("-- SQL file detected\n")
+        external_pipe(command, ' '.join(filter(None,
+                [options.get(command),dbname])), stream)
+    elif head.startswith('PGDMP'):
+        sys.stderr.write("-- PostgreSQL dump detected\n")
+        external_pipe(PG_RESTORE, ' '.join(filter(None,
+                ['-d',dbname,'--format=c',options.get(PG_RESTORE)])),
+            stream)
+    else:
+        raise IOError(errno.EPIPE, "can not handle file of mime "+mime)
+
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('dumps', type=str, nargs='+', metavar='dump',
+    help="Dump or SQL file to restore")
+parser.add_argument('-c', dest='command', type=str, default='psql',
+    help="Path to the SQL command line interpreter")
+parser.add_argument('-o', dest='options', type=str,
+    metavar='command="options"', nargs='+',
+    help="Options for a specific pipe")
+parser.add_argument('-d', dest='dbname', type=str, required=True,
+    help="Database name")
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    if args.options:
+        options = dict(o.split('=', 2) for o in args.options)
+    else:
+        options = {}
+
+    for dump in args.dumps:
+        try:
+            restore(args.command, args.dbname, dump, options)
+        except IOError, e:
+            sys.stderr.write("`%s': %s\n" % (dump, e.strerror))
+            sys.exit(e.errno)
