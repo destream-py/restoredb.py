@@ -1,20 +1,27 @@
-db_restore
-==========
+restoredb
+=========
 
-Database restoration script to automatically decompress any format and pipe to the right restorer.
+This is a small example on how to use StreamDecompressor to make a generic
+pg_restore-like command.
 
-
-Synopsis
-========
+TL;DR
+=====
 
 ```bash
-# Restore many dumps into one database
-db_restore -c psql -d test_database backup_part1.sql backup_part2.sql.gz backup_part3.sql.zip ...
+~/$ restoredb -d dbname my_dump.pgdump.xz
+# will restore a pgdump compressed in xz
 
-# Restore special PostgreSQL dumps (custom & tar formats)
-db_restore -c psql -d test_database backup_part1.dump.7z backup_part2.dump.tar backup_part3.sql.lzma ...
-# it will automatically use pg_restore if the file detected is a pg dump
+~/$ restoredb -d dbname my_dump.sql.bz2
+# will restore an SQL dump compressed in bz2
 
-# Give special parameters
-db_restore -c psql -o psql="-e" pg_restore="-Oe" -d test_database backup_parts.anything.anyorder
+~/$ restoredb -d dbname my_dump.tar.gz
+# will restore an tar dump compressed in gzip
+
+~/$ restoredb -d dbname my_dump.7z
+# will restore any dump if the 7z contains only one file
+# and is a pgdump, SQL dump or tar dump
+
+~/$ ssh toto@foo.bar "cat remote_dump.zip.xz" | restoredb -d dbname
+# will restore any dump if the remote zip file over-compressed in xz
+# contains only one file and is a pgdump, SQL dump or tar dump
 ```
