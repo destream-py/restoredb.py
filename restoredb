@@ -1,83 +1,217 @@
-#!/usr/bin/env python
-"""\
-db_restore is a script to stream any multi-compressed archive to an SQL
-command-line tool a a specific dump program to restore.
-"""
+#!/usr/bin/env python2
+#
+#   restoredb
+#
+#       This is a small example on how to use StreamDecompressor to make a
+#       generic pg_restore-like command.
+#
+#   TL;DR
+#
+#       ~/$ restoredb -d dbname my_dump.pgdump.xz
+#       # will restore a pgdump compressed in xz
+#
+#       ~/$ restoredb -d dbname my_dump.sql.bz2
+#       # will restore an SQL dump compressed in bz2
+#
+#       ~/$ restoredb -d dbname my_dump.tar.gz
+#       # will restore an tar dump compressed in gzip
+#
+#       ~/$ restoredb -d dbname my_dump.7z
+#       # will restore any dump if the 7z contains only one file
+#       # and is a pgdump, SQL dump or tar dump
+#
+#       ~/$ ssh toto@foo.bar "cat remote_dump.zip.xz" | restoredb -d dbname
+#       # will restore any dump if the remote zip file over-compressed in xz
+#       # contains only one file and is a pgdump, SQL dump or tar dump
+#
 
-import re
+import io
+import os
 import sys
 import argparse
-import errno
-from subprocess import Popen, PIPE
+import subprocess
+
 import StreamDecompressor
-from StreamDecompressor.tar import Untar
-import magic
 
-RE_PGDUMP_FORMAT_TAR_FILES = re.compile(r"^((toc|\d+).dat|restore.sql)$")
-PG_RESTORE = 'pg_restore'
+try:
+    import pgheader
+    import time
+except ImportError:
+    pgheader = None
 
-
-def external_pipe(command, options, stdin):
-    sys.stderr.write('-- '+command+' '+options+"\n")
-    p = Popen(command+' '+options, stdin=PIPE, shell=True)
-    p.stdin.writelines(stdin)
-    p.stdin.close()
-    returncode = p.wait()
-    if returncode != 0:
-        raise IOError(errno.EPIPE, "pipe broken: " +command+' '+options)
+__all__ = """
+    PostgreSQLDump PlainSQL pgdump_guesser open parser
+""".split()
 
 
-def restore(command, dbname, dump, options):
-    stream = StreamDecompressor.open(dump)
-    sys.stderr.write("-- Compressions detected: %s\n"
-        % ", ".join(stream.compressions))
-    head = stream.peek(1024)
-    mime = magic.from_buffer(head, mime=True)
-    if isinstance(stream, Untar) and not stream.single:
-        sys.stderr.write("-- Tarball detected\n")
-        sys.stderr.write("-- Files are: "+' '.join(stream.tarfile.getnames())+"\n")
-        if all(map(lambda member: RE_PGDUMP_FORMAT_TAR_FILES.search(member), stream.tarfile.getnames())):
-            sys.stderr.write("-- PostgreSQL dump tarball detected\n")
-            stream.source.seek(0)
-            external_pipe(PG_RESTORE, ' '.join(filter(None,
-                    ['-d',dbname,'--format=t',options.get(PG_RESTORE)])),
-                stream.source)
+class PostgreSQLDump(StreamDecompressor.ExternalPipe):
+    __command__ = ['pg_restore']
+    __compression__ = 'pgdump'
+    __mimes__ = [
+        'binary',               # custom dump
+        'application/x-tar',    # tar dump
+    ]
+
+    def __init__(self, name, fileobj):
+        if pgheader:
+            if type(fileobj) is StreamDecompressor.decompressors.Untar:
+                for member in fileobj.members():
+                    if member.name == 'toc.dat':
+                        toc = fileobj.open(member).read(16000)
+                        break
+                else:
+                    raise IOError("can not find file toc.dat in tarfile")
+            else:
+                toc = fileobj.peek(16000)
+            self.header = pgheader.ArchiveHandle(io.BytesIO(toc))
+            self.header.ReadHead()
         else:
-            raise IOError(errno.EPIPE, "can not handle this tarball")
-    elif mime.startswith('text/'):
-        sys.stderr.write("-- SQL file detected\n")
-        external_pipe(command, ' '.join(filter(None,
-                [options.get(command),dbname])), stream)
-    elif head.startswith('PGDMP'):
-        sys.stderr.write("-- PostgreSQL dump detected\n")
-        external_pipe(PG_RESTORE, ' '.join(filter(None,
-                ['-d',dbname,'--format=c',options.get(PG_RESTORE)])),
-            stream)
-    else:
-        raise IOError(errno.EPIPE, "can not handle file of mime "+mime)
+            self.header = None
+        super(PostgreSQLDump, self).__init__(name, fileobj)
+
+    @classmethod
+    def __guess__(cls, mime, name, fileobj):
+        if type(fileobj) is StreamDecompressor.decompressors.Untar:
+            for member in fileobj.members():
+                if member.name == 'toc.dat':
+                    break
+            else:
+                raise ValueError("can not find file toc.dat in tarfile")
+        else:
+            magic = fileobj.peek(5)
+            if not magic[:5] == 'PGDMP':
+                raise ValueError("not a postgres custom dump")
+        super(PostgreSQLDump, cls).__guess__(mime, name, fileobj)
 
 
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('dumps', type=str, nargs='+', metavar='dump',
-    help="Dump or SQL file to restore")
-parser.add_argument('-c', dest='command', type=str, default='psql',
-    help="Path to the SQL command line interpreter")
-parser.add_argument('-o', dest='options', type=str,
-    metavar='command="options"', nargs='+',
-    help="Options for a specific pipe")
-parser.add_argument('-d', dest='dbname', type=str, required=True,
-    help="Database name")
+class PlainSQL(StreamDecompressor.Archive):
+    __compression__ = 'sql'
+    __mimes__ = [
+        'text/plain',           # pure SQL
+    ]
+
+    def __init__(self, name, fileobj):
+        if type(fileobj) is PostgreSQLDump:
+            self.header = fileobj.header
+        else:
+            self.header = None
+        super(PlainSQL, self).__init__(name, fileobj, fileobj)
+
+    @classmethod
+    def __guess__(cls, mime, name, fileobj):
+        # prevent looping on text/plain
+        if type(fileobj) is PlainSQL:
+            raise ValueError()
+        super(PlainSQL, cls).__guess__(mime, name, fileobj)
+
+
+pgdump_guesser = StreamDecompressor.Guesser(
+    extra_decompressors=[
+        ( 10, PostgreSQLDump),  # run if no other decompressor has been found
+        (  0, PlainSQL),        # determine what type of dump it is
+    ],
+)
+
+
+def open(name=None, fileobj=None):
+    return pgdump_guesser.open(name=name, fileobj=fileobj)
+
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--help', action='store_true')
+parser.add_argument('--dbname', '-d', dest='dbname', type=str)
+parser.add_argument('--host', '-h',
+    help="Specifies the TCP port or the local Unix-domain socket file.")
+parser.add_argument('--port', '-p', type=int)
+parser.add_argument('--no-owner', '-O', action='store_true',
+    help="Do not output commands to set ownership of objects to match the "
+         "original database.")
+parser.add_argument('--no-privileges', '--no-acl', '-x', action='store_true',
+    help="Prevent restoration of access privileges (grant/revoke commands).")
+parser.add_argument('--no-header', action='store_true',
+    help="Do not print header (when available)")
+parser.add_argument('--debug', action='store_true')
+parser.add_argument('dump', nargs='?')
+
+def warn(*messages):
+    sys.stderr.write(" ".join(map(unicode, messages))+"\n")
+
+def die(*messages):
+    warn(*messages)
+    sys.exit(1)
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    if args.options:
-        options = dict(o.split('=', 2) for o in args.options)
-    else:
-        options = {}
 
-    for dump in args.dumps:
+    if args.help:
+        parser.print_help()
+        sys.exit(0)
+
+    def debug(*messages):
+        if args.debug:
+            warn("debug:", *messages)
+
+    if args.no_owner:
+        PostgreSQLDump.__command__.append('--no-owner')
+
+    if args.no_privileges:
+        PostgreSQLDump.__command__.append('--no-privileges')
+
+    if args.dump:
+        archive = pgdump_guesser.open(name=args.dump)
+    else:
+        archive = pgdump_guesser.open(fileobj=sys.stdin)
+    if not archive.compressions or archive.compressions[-1] != 'sql':
+        die("Not a PostgreSQL dump (%s)" % ", ".join(archive.compressions))
+
+    if archive.header and not args.no_header:
+        header = dict(archive.header.__dict__,
+            createDate=time.ctime(archive.header.createDate),
+            format={
+                0 : 'UNKNOWN',
+                1 : 'CUSTOM',
+                3 : 'TAR',
+                4 : 'NULL',
+                5 : 'DIRECTORY',
+            }[archive.header.format])
+        sys.stderr.write(
+            ";\n"
+            "; Archive created at %(createDate)s\n"
+            ";     dbname: %(archdbname)s\n"
+            ";     TOC Entries:\n"
+            ";     Compression: %(compression)s\n"
+            ";     Dump Version: %(vmaj)d.%(vmin)d-%(vrev)d\n"
+            ";     Format: %(format)s\n"
+            ";     Integer: %(intSize)d bytes\n"
+            ";     Offset: %(offSize)d bytes\n"
+            ";     Dumped from database version: %(archiveDumpVersion)s\n"
+            ";     Dumped by pg_dump version: %(archiveRemoteVersion)s\n"
+            ";\n"
+            % header
+        )
+
+    if 'pgdump' in archive.compressions:
+        debug("pg_restore arguments:", PostgreSQLDump.__command__)
+
+    if not args.dbname:
+        sys.stdout.writelines(archive)
+    else:
+        command_args = ['psql', '--dbname', args.dbname]
+        if args.host:
+            command_args += ['--host', args.host]
+        if args.port:
+            command_args += ['--port', args.port]
+        debug("command arguments:", command_args)
+        # NOTE: can't use stdin=archive because it doesn't flush line-by-line
+        psql = subprocess.Popen(command_args, stdin=subprocess.PIPE,
+            stdout=io.open(os.devnull))
         try:
-            restore(args.command, args.dbname, dump, options)
-        except IOError, e:
-            sys.stderr.write("`%s': %s\n" % (dump, e.strerror))
-            sys.exit(e.errno)
+            psql.stdin.writelines(archive)
+            debug("psql: finished writing lines, closing...")
+            psql.stdin.close()
+        except IOError:
+            pass
+        retcode = psql.wait()
+        debug("psql exit status:", retcode)
+        if retcode:
+            sys.exit(retcode)
