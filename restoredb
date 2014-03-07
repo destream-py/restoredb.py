@@ -99,9 +99,8 @@ class PlainSQL(StreamDecompressor.Archive):
 
     @classmethod
     def __guess__(cls, mime, name, fileobj):
-        # prevent looping on text/plain
         if type(fileobj) is PlainSQL:
-            raise ValueError()
+            raise ValueError("prevent looping on text/plain")
         super(PlainSQL, cls).__guess__(mime, name, fileobj)
 
 
