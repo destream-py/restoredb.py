@@ -57,7 +57,7 @@ class PostgreSQLDump(StreamDecompressor.ExternalPipe):
             if type(fileobj) is StreamDecompressor.decompressors.Untar:
                 for member in fileobj.members():
                     if member.name == 'toc.dat':
-                        toc = fileobj.open(member).read(16000)
+                        toc = fileobj.open(member).peek(16000)
                         break
                 else:
                     raise IOError("can not find file toc.dat in tarfile")
