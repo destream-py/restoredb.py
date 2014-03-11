@@ -48,8 +48,11 @@ class PostgreSQLDump(StreamDecompressor.ExternalPipe):
     __command__ = ['pg_restore']
     __compression__ = 'pgdump'
     __mimes__ = [
-        'binary',               # custom dump
-        'application/x-tar',    # tar dump
+        # custom dump
+        'application/octet-stream',
+        'binary',
+        # tar dump
+        'application/x-tar',
     ]
 
     def __init__(self, name, fileobj):
