@@ -130,6 +130,12 @@ parser.add_argument('--no-owner', '-O', action='store_true',
          "original database.")
 parser.add_argument('--no-privileges', '--no-acl', '-x', action='store_true',
     help="Prevent restoration of access privileges (grant/revoke commands).")
+parser.add_argument('--clean', '-c', action='store_true',
+    help="Clean (drop) database objects before recreating them.")
+parser.add_argument('--create', '-C', action='store_true',
+    help="Create the database before restoring into it. If --clean is also "
+         "specified, drop and recreate the target database before connecting "
+         "to it.")
 parser.add_argument('--no-header', action='store_true',
     help="Do not print header (when available)")
 parser.add_argument('--debug', action='store_true')
@@ -158,6 +164,12 @@ if __name__ == '__main__':
 
     if args.no_privileges:
         PostgreSQLDump.__command__.append('--no-privileges')
+
+    if args.clean:
+        PostgreSQLDump.__command__.append('--clean')
+
+    if args.create:
+        PostgreSQLDump.__command__.append('--create')
 
     if args.dump:
         archive = pgdump_guesser.open(name=args.dump)
@@ -198,11 +210,20 @@ if __name__ == '__main__':
     if not args.dbname:
         sys.stdout.writelines(archive)
     else:
-        command_args = ['psql', '--dbname', args.dbname]
+        command_args = ['psql']
+
+        # select the database to connect
+        if 'pgdump' in archive.compressions and args.create:
+            command_args += ['--dbname', 'postgres']
+        else:
+            command_args += ['--dbname', args.dbname]
+
+        # psql arguments
         if args.host:
             command_args += ['--host', args.host]
         if args.port:
             command_args += ['--port', args.port]
+
         debug("command arguments:", command_args)
         # NOTE: can't use stdin=archive because it doesn't flush line-by-line
         psql = subprocess.Popen(command_args, stdin=subprocess.PIPE,
