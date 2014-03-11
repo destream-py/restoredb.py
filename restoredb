@@ -208,7 +208,12 @@ if __name__ == '__main__':
         debug("pg_restore arguments:", PostgreSQLDump.__command__)
 
     if not args.dbname:
-        sys.stdout.writelines(archive)
+        try:
+            sys.stdout.writelines(archive)
+            sys.exit(0)
+        except IOError, e:
+            archive.close()
+            die(e.args[1])
     else:
         command_args = ['psql']
 
@@ -233,8 +238,8 @@ if __name__ == '__main__':
             debug("psql: finished writing lines, closing...")
             psql.stdin.close()
         except IOError:
-            pass
+            archive.close()
+            die(e.args[1])
         retcode = psql.wait()
         debug("psql exit status:", retcode)
-        if retcode:
-            sys.exit(retcode)
+        sys.exit(retcode)
