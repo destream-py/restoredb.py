@@ -81,7 +81,7 @@ class PostgreSQLDump(StreamDecompressor.ExternalPipe):
             magic = fileobj.peek(5)
             if not magic[:5] == 'PGDMP':
                 raise ValueError("not a postgres custom dump")
-        super(PostgreSQLDump, cls).__guess__(mime, name, fileobj)
+        return super(PostgreSQLDump, cls).__guess__(mime, name, fileobj)
 
 
 class PlainSQL(StreamDecompressor.Archive):
@@ -101,7 +101,7 @@ class PlainSQL(StreamDecompressor.Archive):
     def __guess__(cls, mime, name, fileobj):
         if type(fileobj) is PlainSQL:
             raise ValueError("prevent looping on text/plain")
-        super(PlainSQL, cls).__guess__(mime, name, fileobj)
+        return super(PlainSQL, cls).__guess__(mime, name, fileobj)
 
 
 pgdump_guesser = StreamDecompressor.Guesser(
