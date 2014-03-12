@@ -30,6 +30,7 @@ import os
 import sys
 import argparse
 import subprocess
+import tarfile
 
 import StreamDecompressor
 
@@ -40,61 +41,78 @@ except ImportError:
     pgheader = None
 
 __all__ = """
-    PostgreSQLDump PlainSQL pgdump_guesser open parser
+    PostgreSQLDump PostgreSQLTarDump PlainSQL pgdump_guesser open parser run
 """.split()
 
 
 class PostgreSQLDump(StreamDecompressor.ExternalPipe):
+    """
+    Stream custom dump to pg_restore in order to get SQL
+    """
     __command__ = ['pg_restore']
-    __compression__ = 'pgdump'
+    __compression__ = 'pgdmp_custom'
     __mimes__ = [
-        # custom dump
         'application/octet-stream',
         'binary',
-        # tar dump
-        'application/x-tar',
     ]
 
-    def __init__(self, name, fileobj):
+    def __init__(self, name, fileobj, toc_pos=0):
         if pgheader:
-            if type(fileobj) is StreamDecompressor.decompressors.Untar:
-                for member in fileobj.members():
-                    if member.name == 'toc.dat':
-                        toc = fileobj.open(member).peek(16000)
-                        break
-                else:
-                    raise IOError("can not find file toc.dat in tarfile")
-            else:
-                toc = fileobj.peek(16000)
-            self.header = pgheader.ArchiveHandle(io.BytesIO(toc))
+            self.header = pgheader.ArchiveHandle(
+                io.BytesIO(fileobj.peek(16000)[toc_pos:]))
             self.header.ReadHead()
         else:
             self.header = None
         super(PostgreSQLDump, self).__init__(name, fileobj)
 
     @classmethod
+    def __guess__(cls, mime, name, fileobj, toc_pos=0):
+        realname = super(PostgreSQLDump, cls).__guess__(mime, name, fileobj)
+        magic = fileobj.peek(5)[toc_pos:]
+        if not magic[:5] == 'PGDMP':
+            raise ValueError("not a postgres custom dump")
+        return realname
+
+
+class PostgreSQLTarDump(PostgreSQLDump):
+    """
+    Inherit of PostgreSQLDump to add some specific behaviors related to tar.
+
+    Note: this decompressor must run prior to the Untar decompressor
+    """
+    __compression__ = 'pgdmp_tar'
+    __mimes__ = [
+        'application/x-tar',
+    ]
+    __extensions__ = ['tar']
+
+    def __init__(self, name, fileobj):
+        super(PostgreSQLTarDump, self)\
+            .__init__(name, fileobj, toc_pos=tarfile.BLOCKSIZE)
+
+    @classmethod
     def __guess__(cls, mime, name, fileobj):
-        if type(fileobj) is StreamDecompressor.decompressors.Untar:
-            for member in fileobj.members():
-                if member.name == 'toc.dat':
-                    break
-            else:
-                raise ValueError("can not find file toc.dat in tarfile")
-        else:
-            magic = fileobj.peek(5)
-            if not magic[:5] == 'PGDMP':
-                raise ValueError("not a postgres custom dump")
-        return super(PostgreSQLDump, cls).__guess__(mime, name, fileobj)
+        if mime not in cls.__mimes__:
+            raise ValueError("not a tar file")
+        tarinfo = tarfile.TarInfo.frombuf(
+            fileobj.peek(tarfile.BLOCKSIZE)[:tarfile.BLOCKSIZE])
+        if not tarinfo.name == 'toc.dat':
+            raise ValueError("does not look like a tar dump")
+        return super(PostgreSQLTarDump, cls).__guess__(
+            mime, name, fileobj, toc_pos=tarfile.BLOCKSIZE)
 
 
 class PlainSQL(StreamDecompressor.Archive):
+    """
+    This class only make sure we have text/plain here
+    """
     __compression__ = 'sql'
     __mimes__ = [
-        'text/plain',           # pure SQL
+        'text/plain',
     ]
 
     def __init__(self, name, fileobj):
-        if type(fileobj) is PostgreSQLDump:
+        if isinstance(fileobj, PostgreSQLDump):
             self.header = fileobj.header
         else:
             self.header = None
@@ -109,8 +127,9 @@ class PlainSQL(StreamDecompressor.Archive):
 
 pgdump_guesser = StreamDecompressor.Guesser(
     extra_decompressors=[
-        ( 10, PostgreSQLDump),  # run if no other decompressor has been found
-        (  0, PlainSQL),        # determine what type of dump it is
+        (-10, PostgreSQLTarDump),
+        (  0, PostgreSQLDump),
+        (  0, PlainSQL),
     ],
 )
 
