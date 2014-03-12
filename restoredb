@@ -148,16 +148,14 @@ def die(*messages):
     warn(*messages)
     sys.exit(1)
 
-if __name__ == '__main__':
-    args = parser.parse_args()
+def debug(*messages):
+    if args.debug:
+        warn("debug:", *messages)
 
+def run(args):
     if args.help:
         parser.print_help()
         sys.exit(0)
-
-    def debug(*messages):
-        if args.debug:
-            warn("debug:", *messages)
 
     if args.no_owner:
         PostgreSQLDump.__command__.append('--no-owner')
@@ -243,3 +241,7 @@ if __name__ == '__main__':
         retcode = psql.wait()
         debug("psql exit status:", retcode)
         sys.exit(retcode)
+
+if __name__ == '__main__':
+    args = parser.parse_args()
+    run(args)
