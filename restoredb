@@ -213,13 +213,7 @@ def run(args):
             archive.close()
             die(e.args[1])
     else:
-        command_args = ['psql']
-
-        # select the database to connect
-        if 'pgdump' in archive.compressions and args.create:
-            command_args += ['--dbname', 'postgres']
-        else:
-            command_args += ['--dbname', args.dbname]
+        command_args = ['psql', '--dbname', args.dbname]
 
         # psql arguments
         if args.host:
