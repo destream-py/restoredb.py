@@ -143,6 +143,9 @@ parser.add_argument('--help', action='store_true')
 parser.add_argument('--dbname', '-d', dest='dbname', type=str)
 parser.add_argument('--host', '-h',
     help="Specifies the TCP port or the local Unix-domain socket file.")
+parser.add_argument('--username', '-U',
+    help="Connect to the database as the user username instead "
+         "of the default.")
 parser.add_argument('--port', '-p', type=int)
 parser.add_argument('--no-owner', '-O', action='store_true',
     help="Do not output commands to set ownership of objects to match the "
@@ -239,6 +242,8 @@ def run(args):
             command_args += ['--host', args.host]
         if args.port:
             command_args += ['--port', args.port]
+        if args.username:
+            command_args += ['--username', args.username]
 
         debug("command arguments:", command_args)
         # NOTE: can't use stdin=archive because it doesn't flush line-by-line
