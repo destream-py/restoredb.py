@@ -241,7 +241,7 @@ def run(args):
         if args.host:
             command_args += ['--host', args.host]
         if args.port:
-            command_args += ['--port', args.port]
+            command_args += ['--port', str(args.port)]
         if args.username:
             command_args += ['--username', args.username]
 
