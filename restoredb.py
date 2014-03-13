@@ -227,7 +227,7 @@ def run(args):
     if 'pgdump' in archive.compressions:
         debug("pg_restore arguments:", PostgreSQLDump.__command__)
 
-    if not args.dbname:
+    if not args.dbname or args.dbname == '-':
         try:
             sys.stdout.writelines(archive)
             sys.exit(0)
