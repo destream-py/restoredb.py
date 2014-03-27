@@ -14,11 +14,17 @@ if not hasattr(subprocess, 'DEVNULL'):
 
 def run(command, *a, **kw):
     stdin = kw.pop('stdin', None)
-    return subprocess.check_output(
-        [command] +
-        [(("-" if len(k) == 1 else "--") + str(k) + "=" + str(v))
-         for k, v in kw.items() if v is not None] +
-        list(a), stderr=subprocess.DEVNULL, stdin=stdin)
+    command_arguments = [command]
+    command_arguments.extend([
+        (("-" if len(k) == 1 else "--") + str(k) + "=" + str(v))
+        for k, v in kw.items() if v is not None
+    ])
+    command_arguments.extend(list(a))
+    r, w = os.pipe()
+    # NOTE: FileIO will automatically close the fd when deleted
+    subprocess.check_call(command_arguments,
+        stderr=subprocess.DEVNULL, stdin=stdin, stdout=io.FileIO(w, 'w'))
+    return io.FileIO(r, 'r').read()
 
 def connect(dbname, host=None, port=None, username=None):
     return psycopg2.connect(database=dbname,
