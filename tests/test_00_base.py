@@ -1,5 +1,6 @@
 import io
 import os
+import errno
 import unittest2
 import subprocess
 import tempfile
@@ -45,6 +46,24 @@ class Transaction(object):
             self.cur.execute("COMMIT;")
         else:
             self.cur.execute("ROLLBACK;")
+
+class BaseTests(unittest2.TestCase):
+    def test_50_restore_something_bad(self):
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write("\0")
+            temp.flush()
+            try:
+                with restoredb.open(name=temp.name) as fh:
+                    self.fail("should not entering here")
+            except IOError, exc:
+                self.assertEqual(exc.errno, errno.EPIPE)
+
+    def test_50_check_header_only(self):
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write("Plain text is taken as SQL")
+            temp.flush()
+            with restoredb.open(name=temp.name) as fh:
+                pass
 
 class FromFile(unittest2.TestCase):
     address = {
@@ -200,5 +219,4 @@ class FromStdin(FromFile):
         kw = dict(self.address.items() +
                   [('dbname', self.dbname)] +
                   kw.items(), stdin=open(self.temp.name, 'rb'))
-        a = ['--debug']
-        run(restoredb.__file__, *a, **kw)
+        return run(restoredb.__file__, *a, **kw)
