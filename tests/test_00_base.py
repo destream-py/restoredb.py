@@ -95,8 +95,8 @@ class FromFile(unittest2.TestCase):
         run(self.dropdb, self.dbname, **self.address)
 
     def _dumpdb(self, *a, **kw):
-        kw = dict(self.address.items() +
-                 [('dbname', self.dbname)] + kw.items())
+        kw = dict(self.address.items() + kw.items())
+        a = list(a) + [self.dbname]
         return run(self.pg_dump, *a, **kw)
 
     def _restoredb(self, *a, **kw):
@@ -157,13 +157,13 @@ class FromFile(unittest2.TestCase):
         self.fail("let's cancel checks")
 
     def test_10_sql_dump(self):
-        self.temp.write(self._dumpdb('-F', 'p'))
+        self.temp.write(self._dumpdb(format='plain'))
 
     def test_10_custom_dump(self):
-        self.temp.write(self._dumpdb('-F', 'c'))
+        self.temp.write(self._dumpdb(format='custom'))
 
     def test_10_tar_dump(self):
-        self.temp.write(self._dumpdb('-F', 't'))
+        self.temp.write(self._dumpdb(format='tar'))
 
     def test_20_sql_dump_in_a_tar(self):
         dump = io.BytesIO(self._dumpdb('-F', 'p'))
