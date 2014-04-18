@@ -22,9 +22,11 @@ def run(command, *a, **kw):
     command_arguments.extend(list(a))
     r, w = os.pipe()
     # NOTE: FileIO will automatically close the fd when deleted
-    subprocess.check_call(command_arguments,
-        stderr=subprocess.DEVNULL, stdin=stdin, stdout=io.FileIO(w, 'w'))
-    return io.FileIO(r, 'r').read()
+    with io.FileIO(w, 'w') as stdout:
+        subprocess.check_call(command_arguments,
+            stderr=stdout, stdin=stdin, stdout=stdout)
+    with io.FileIO(r, 'r') as fd:
+        return fd.read()
 
 def connect(dbname, host=None, port=None, username=None):
     return psycopg2.connect(database=dbname,
