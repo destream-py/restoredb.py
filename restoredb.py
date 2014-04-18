@@ -28,6 +28,7 @@
 import io
 import os
 import sys
+import errno
 import argparse
 import subprocess
 import tarfile
@@ -135,7 +136,10 @@ pgdump_guesser = StreamDecompressor.Guesser(
 
 
 def open(name=None, fileobj=None):
-    return pgdump_guesser.open(name=name, fileobj=fileobj)
+    archive = pgdump_guesser.open(name=name, fileobj=fileobj)
+    if not archive.compressions or archive.compressions[-1] != 'sql':
+        raise IOError(errno.EPIPE, "Not a PostgreSQL dump")
+    return archive
 
 
 parser = argparse.ArgumentParser(add_help=False)
@@ -193,11 +197,15 @@ def run(args):
         PostgreSQLDump.__command__.append('--create')
 
     if args.dump:
-        archive = pgdump_guesser.open(name=args.dump)
+        try:
+            archive = open(name=args.dump)
+        except IOError, exc:
+            die(args.dump+':', exc.strerror)
     else:
-        archive = pgdump_guesser.open(fileobj=sys.stdin)
-    if not archive.compressions or archive.compressions[-1] != 'sql':
-        die("Not a PostgreSQL dump (%s)" % ", ".join(archive.compressions))
+        try:
+            archive = open(fileobj=sys.stdin)
+        except IOError, exc:
+            die('-:', exc.strerror)
 
     if archive.header and not args.no_header:
         header = dict(archive.header.__dict__,
@@ -248,8 +256,8 @@ def run(args):
 
         debug("command arguments:", command_args)
         # NOTE: can't use stdin=archive because it doesn't flush line-by-line
-        psql = subprocess.Popen(command_args, stdin=subprocess.PIPE,
-            stdout=io.open(os.devnull))
+        psql = subprocess.Popen(command_args,
+            stdin=subprocess.PIPE, stdout=io.open(os.devnull))
         try:
             psql.stdin.writelines(archive)
             debug("psql: finished writing lines, closing...")
