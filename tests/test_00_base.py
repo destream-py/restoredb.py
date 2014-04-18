@@ -48,9 +48,9 @@ class Transaction(object):
 
 class FromFile(unittest2.TestCase):
     address = {
-        'host' : 'localhost',
-        'port' : 5432,
-        'username' : os.environ['USER'],
+        'host' : os.environ.get('PGHOST', 'localhost'),
+        'port' : os.environ.get('PGPORT', 5432),
+        'username' : os.environ.get('PGUSER', os.environ['USER']),
     }
     basename = 'test'
     createdb = 'createdb'
