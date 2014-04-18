@@ -160,7 +160,8 @@ parser.add_argument('--create', '-C', action='store_true',
          "to it.")
 parser.add_argument('--no-header', action='store_true',
     help="Do not print header (when available)")
-parser.add_argument('--debug', action='store_true')
+parser.add_argument('--debug', action='store_true',
+    default=bool(os.environ.get('DEBUG', False)))
 parser.add_argument('dump', nargs='?')
 
 def warn(*messages):
