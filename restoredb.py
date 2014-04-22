@@ -56,6 +56,7 @@ class PostgreSQLDump(StreamDecompressor.ExternalPipe):
         'application/octet-stream',
         'binary',
     ]
+    __extensions__ = ['dump', 'dmp', 'pgdmp', 'pgdump']
 
     def __init__(self, name, fileobj, toc_pos=0):
         if pgheader:
@@ -111,6 +112,7 @@ class PlainSQL(StreamDecompressor.Archive):
     __mimes__ = [
         'text/plain',
     ]
+    __extensions__ = ['dump', 'dmp']
 
     def __init__(self, name, fileobj):
         if isinstance(fileobj, PostgreSQLDump):
@@ -207,6 +209,9 @@ def run(args):
         except IOError, exc:
             die('-:', exc.strerror)
 
+    debug("real name:", archive.realname)
+    debug("compressions:", *archive.compressions)
+
     if archive.header and not args.no_header:
         header = dict(archive.header.__dict__,
             createDate=time.ctime(archive.header.createDate),
@@ -262,7 +267,7 @@ def run(args):
             psql.stdin.writelines(archive)
             debug("psql: finished writing lines, closing...")
             psql.stdin.close()
-        except IOError:
+        except IOError, e:
             archive.close()
             die(e.args[1])
         retcode = psql.wait()
