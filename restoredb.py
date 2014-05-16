@@ -241,7 +241,8 @@ def run(args):
     if 'pgdump' in archive.compressions:
         debug("pg_restore arguments:", PostgreSQLDump.__command__)
 
-    if not args.dbname or args.dbname == '-':
+    if (not args.dbname and not os.isatty(sys.stdout.fileno())) or \
+       args.dbname == '-':
         try:
             sys.stdout.writelines(archive)
             sys.exit(0)
@@ -249,7 +250,7 @@ def run(args):
             archive.close()
             die(e.args[1])
     else:
-        command_args = ['psql', '--dbname', args.dbname]
+        command_args = ['psql', '--dbname', (args.dbname or archive.realname)]
 
         # psql arguments
         if args.host:
