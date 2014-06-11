@@ -113,6 +113,7 @@ class PlainSQL(StreamDecompressor.Archive):
         'text/plain',
     ]
     __extensions__ = ['dump', 'dmp']
+    __uniqueinstance__ = True
 
     def __init__(self, name, fileobj):
         if isinstance(fileobj, PostgreSQLDump):
@@ -120,12 +121,6 @@ class PlainSQL(StreamDecompressor.Archive):
         else:
             self.header = None
         super(PlainSQL, self).__init__(name, fileobj, fileobj)
-
-    @classmethod
-    def __guess__(cls, mime, name, fileobj):
-        if type(fileobj) is PlainSQL:
-            raise ValueError("prevent looping on text/plain")
-        return super(PlainSQL, cls).__guess__(mime, name, fileobj)
 
 
 pgdump_guesser = StreamDecompressor.Guesser(
