@@ -65,7 +65,11 @@ class PostgreSQLDump(StreamDecompressor.ExternalPipe):
             self.header.ReadHead()
         else:
             self.header = None
+        self.__command__[0] = self.find_pg_restore()
         super(PostgreSQLDump, self).__init__(name, fileobj)
+
+    def find_pg_restore(self):
+        return self.__command__[0]
 
     @classmethod
     def __guess__(cls, mime, name, fileobj, toc_pos=0):
