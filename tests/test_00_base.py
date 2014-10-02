@@ -1,5 +1,6 @@
 import io
 import os
+import sys
 import errno
 import unittest2
 import subprocess
@@ -10,12 +11,19 @@ import tarfile
 
 import restoredb
 
+
+RESTOREDB = [sys.executable] + [os.environ.get('RESTOREDB', 'restoredb.py')]
+
+
 if not hasattr(subprocess, 'DEVNULL'):
     subprocess.DEVNULL = io.open(os.devnull, 'wb')
 
 def run(command, *a, **kw):
     stdin = kw.pop('stdin', None)
-    command_arguments = [command]
+    if hasattr(command, '__iter__'):
+        command_arguments = list(command)
+    else:
+        command_arguments = [command]
     command_arguments.extend([
         (("-" if len(k) == 1 else "--") + str(k) + "=" + str(v))
         for k, v in kw.items() if v is not None
@@ -121,8 +129,8 @@ class FromFile(unittest2.TestCase):
     def _restoredb(self, *a, **kw):
         kw = dict(self.address.items() +
                   [('dbname', self.dbname)] + kw.items())
-        run(restoredb.__file__,
-            self.temp.name, *a, **kw)
+        run(RESTOREDB, self.temp.name,
+            *a, **kw)
 
     def _cleanup(self):
         self.temp.close()
@@ -219,4 +227,4 @@ class FromStdin(FromFile):
         kw = dict(self.address.items() +
                   [('dbname', self.dbname)] +
                   kw.items(), stdin=open(self.temp.name, 'rb'))
-        return run(restoredb.__file__, *a, **kw)
+        return run(RESTOREDB, *a, **kw)
