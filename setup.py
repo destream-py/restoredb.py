@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name = "restoredb",
-    version = "1.0",
+    version = "1.1",
     author = "Cecile Tonglet",
     author_email = "cecile.tonglet@gmail.com",
     description = ("Database restoration script to automatically decompress "
