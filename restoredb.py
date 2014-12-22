@@ -249,7 +249,7 @@ def run(args):
             archive.close()
             die(e.args[1])
     else:
-        command_args = ['psql', '-X', '-v', 'ON_ERROR_STOP=1',
+        command_args = ['psql', '-X',
                         (args.dbname or archive.realname)]
 
         # psql arguments
