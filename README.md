@@ -4,8 +4,15 @@ restoredb
 This is a small example on how to use StreamDecompressor to make a generic
 pg_restore-like command.
 
+Installation
+------------
+
+```
+pip install restoredb
+```
+
 TL;DR
-=====
+-----
 
 ```bash
 ~/$ restoredb -d dbname my_dump.pgdump.xz
